@@ -21,7 +21,6 @@ import os
 import json
 import socket
 from datetime import datetime, timezone
-
 import pandas as pd
 import requests
 from flask import Flask, jsonify, render_template_string
@@ -52,6 +51,17 @@ def get_ec2_metadata():
     except Exception:
         return f"local-{socket.gethostname()}", "local-dev"
 
+def report_metrics():
+    df = pd.read_csv(DATA_PATH)
+    df_fallas_por_zona = df[["estacion","ubicacion"]]
+    total = len(df)
+    passed = int((df["resultado"] == "PASS").sum())
+    failed = total - passed
+    pass_rate = round(passed / total * 100, 1) if total else 0
+
+    return df, df_fallas_por_zona, total, passed, failed, pass_rate
+
+
 
 @app.route("/")
 def index():
@@ -60,7 +70,7 @@ def index():
     <html>
     <head><title>Infra Monitor</title></head>
     <body style="font-family: sans-serif; padding: 40px;">
-      <h1>Servidor respondiendo</h1>
+      <h1>Servidor  Activo</h1>
       <p><b>Instance ID:</b> {{ instance_id }}</p>
       <p><b>Availability Zone:</b> {{ az }}</p>
       <p><b>Hora del servidor (UTC):</b> {{ now }}</p>
@@ -80,11 +90,7 @@ def health():
 
 @app.route("/report")
 def report():
-    df = pd.read_csv(DATA_PATH)
-    total = len(df)
-    passed = int((df["resultado"] == "PASS").sum())
-    failed = total - passed
-    pass_rate = round(passed / total * 100, 1) if total else 0
+    df, df_fallas_por_zona, total, passed, failed, pass_rate = report_metrics()
 
     top_failures = (
         df[df["resultado"] == "FAIL"]["causa_falla"]
@@ -102,6 +108,25 @@ def report():
         "top_causas_falla": top_failures,
     }
 
+    html = """
+    <html>
+    <head><title>Resumen de Fallas</title></head>
+    <body style="font-family: sans-serif; padding: 40px;">
+        <h1>Resumen de Fallas</h1>
+        <p><b>Total de unidades probadas:</b> {{ total }}, <b>Total de unidades pasadas:</b> {{ passed }}, <b>Total de unidades fallidas:</b> {{ failed }}</p>
+        <p><b>Porcentaje de éxito:</b> {{ pass_rate }}%</p>
+        <h2>Top 5 causas de falla</h2>
+        <ul>
+        {% for causa, count in top_failures.items() %}
+            <li>{{ causa }}: {{ count }} fallas</li>
+        {% endfor %}
+        </ul>
+        <p><a href="/">Regresar a pagina principal</a></p>
+    </body>
+    """
+    
+    return render_template_string(html, total=total, passed=passed, failed=failed, pass_rate=pass_rate, top_failures=top_failures)
+
     uploaded = False
     if S3_BUCKET:
         try:
@@ -117,6 +142,7 @@ def report():
 
     summary["subido_a_s3"] = uploaded
     return jsonify(summary)
+
 
 
 if __name__ == "__main__":
