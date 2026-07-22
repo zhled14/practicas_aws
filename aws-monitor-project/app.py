@@ -106,6 +106,19 @@ def report():
         "top_causas_falla": top_failures,
     }
 
+    uploaded = False
+    s3_error = None
+    if S3_BUCKET:
+        try:
+            import boto3
+            s3 = boto3.client("s3", region_name=AWS_REGION)
+            key = f"reportes/tpy_report_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.json"
+            s3.put_object(Bucket=S3_BUCKET, Key=key, Body=json.dumps(summary, indent=2))
+            uploaded = True
+        except Exception as e:
+            s3_error = str(e)
+            app.logger.error("Fallo al subir el reporte a S3: %s", s3_error)
+
     html = """
     <html>
     <head><title>Resumen de Fallas</title></head>
@@ -119,26 +132,24 @@ def report():
             <li>{{ causa }}: {{ count }} fallas</li>
         {% endfor %}
         </ul>
+        {% if s3_bucket %}
+        <p><b>Subido a S3:</b> {{ "sí" if uploaded else "no (" + s3_error + ")" }}</p>
+        {% endif %}
         <p><a href="/">Regresar a pagina principal</a></p>
     </body>
     """
-    
-    return render_template_string(html, total=total, passed=passed, failed=failed, pass_rate=pass_rate, top_failures=top_failures)
 
-    uploaded = False
-    if S3_BUCKET:
-        try:
-            import boto3
-            s3 = boto3.client("s3", region_name=AWS_REGION)
-            key = f"reportes/tpy_report_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.json"
-            s3.put_object(Bucket=S3_BUCKET, Key=key, Body=json.dumps(summary, indent=2))
-            summary["s3_key"] = key
-            uploaded = True
-        except Exception as e:
-            summary["s3_error"] = str(e)
-
-    summary["subido_a_s3"] = uploaded
-    return jsonify(summary)
+    return render_template_string(
+        html,
+        total=total,
+        passed=passed,
+        failed=failed,
+        pass_rate=pass_rate,
+        top_failures=top_failures,
+        s3_bucket=S3_BUCKET,
+        uploaded=uploaded,
+        s3_error=s3_error,
+    )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
