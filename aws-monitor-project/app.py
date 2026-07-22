@@ -53,15 +53,13 @@ def get_ec2_metadata():
 
 def report_metrics():
     df = pd.read_csv(DATA_PATH)
-    df_fallas_por_zona = df[["estacion","ubicacion"]]
+    df_fallas_por_zona = df["estacion"]
     total = len(df)
     passed = int((df["resultado"] == "PASS").sum())
     failed = total - passed
     pass_rate = round(passed / total * 100, 1) if total else 0
 
     return df, df_fallas_por_zona, total, passed, failed, pass_rate
-
-
 
 @app.route("/")
 def index():
@@ -131,7 +129,6 @@ def report():
     if S3_BUCKET:
         try:
             import boto3
-
             s3 = boto3.client("s3", region_name=AWS_REGION)
             key = f"reportes/tpy_report_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.json"
             s3.put_object(Bucket=S3_BUCKET, Key=key, Body=json.dumps(summary, indent=2))
@@ -142,8 +139,6 @@ def report():
 
     summary["subido_a_s3"] = uploaded
     return jsonify(summary)
-
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)
